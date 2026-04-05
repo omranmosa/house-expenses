@@ -325,6 +325,15 @@ h3 { font-size: 16px; margin-bottom: 12px; color: var(--text); }
   .mom-row { flex-wrap: wrap; }
 }
 
+/* RTL support */
+[dir="rtl"] { text-align: right; }
+[dir="rtl"] h1 { text-align: center; }
+[dir="rtl"] .subtitle { text-align: center; }
+[dir="rtl"] .section label { text-align: right; }
+[dir="rtl"] .file-remove { right: auto; left: 4px; }
+[dir="rtl"] .worker-header { flex-direction: row-reverse; }
+[dir="rtl"] .pin-pad { direction: ltr; }
+
 /* Print styles */
 @media print {
   .tabs, .filters-bar, .export-btn, .submit-btn { display: none; }

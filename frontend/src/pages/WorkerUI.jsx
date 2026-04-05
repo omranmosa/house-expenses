@@ -3,10 +3,66 @@ import { useState, useRef, useEffect } from 'react'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 const WORKERS = [
-  { name: 'تحسين', pin: '1689' },
-  { name: 'Biswajit', pin: '1590' },
+  { name: 'تحسين', pin: '1689', lang: 'ar' },
+  { name: 'Biswajit', pin: '1590', lang: 'en' },
 ]
 const AUTHORIZERS = ['Omran عمران', 'Juju الجوهره']
+
+const T = {
+  en: {
+    title: 'House Expenses',
+    selectName: 'Select your name to continue',
+    enterPin: (name) => `Enter PIN for ${name}`,
+    wrongPin: 'Wrong PIN. Try again.',
+    back: 'Back',
+    switchUser: 'Switch user',
+    loggedInAs: (name) => `Logged in as ${name}`,
+    offline: "You're offline — receipts will be queued and synced automatically",
+    savedOffline: (n) => `${n} receipt${n > 1 ? 's' : ''} saved offline`,
+    syncNow: 'Sync now',
+    syncing: 'Syncing...',
+    authorizedBy: 'Authorized by',
+    receipts: 'Receipts',
+    tapToPhoto: 'Tap to take photos or browse',
+    dragDrop: 'Select multiple — or drag & drop',
+    ready: 'Ready',
+    scanning: 'Scanning...',
+    queuedOffline: 'Queued offline',
+    scanningReceipts: 'Scanning receipts...',
+    submit: (n) => `Submit ${n} receipt${n !== 1 ? 's' : ''}`,
+    clearAll: 'Clear all & start fresh',
+    receiptSaved: 'Receipt saved!',
+    failedOffline: 'Failed to save offline',
+    savedOfflineSync: 'Saved offline — will sync when online',
+  },
+  ar: {
+    title: 'مصاريف المنزل',
+    selectName: 'اختر اسمك للمتابعة',
+    enterPin: (name) => `أدخل الرمز لـ ${name}`,
+    wrongPin: 'رمز خاطئ. حاول مرة أخرى.',
+    back: 'رجوع',
+    switchUser: 'تبديل المستخدم',
+    loggedInAs: (name) => `تم الدخول كـ ${name}`,
+    offline: 'أنت غير متصل — سيتم حفظ الإيصالات ومزامنتها تلقائياً',
+    savedOffline: (n) => `${n} إيصال${n > 1 ? 'ات' : ''} محفوظة بدون اتصال`,
+    syncNow: 'مزامنة الآن',
+    syncing: 'جاري المزامنة...',
+    authorizedBy: 'بإذن من',
+    receipts: 'الإيصالات',
+    tapToPhoto: 'اضغط لالتقاط صورة أو تصفح',
+    dragDrop: 'اختر عدة صور — أو اسحب وأفلت',
+    ready: 'جاهز',
+    scanning: 'جاري المسح...',
+    queuedOffline: 'في الانتظار بدون اتصال',
+    scanningReceipts: 'جاري مسح الإيصالات...',
+    submit: (n) => `إرسال ${n} إيصال${n !== 1 ? 'ات' : ''}`,
+    clearAll: 'مسح الكل والبدء من جديد',
+    receiptSaved: 'تم حفظ الإيصال!',
+    failedOffline: 'فشل الحفظ بدون اتصال',
+    savedOfflineSync: 'تم الحفظ بدون اتصال — ستتم المزامنة عند الاتصال',
+  },
+}
+
 const DB_NAME = 'receipts-offline'
 const STORE_NAME = 'queue'
 
@@ -164,6 +220,9 @@ export default function WorkerUI() {
 
   const pendingCount = files.filter(f => f.status === 'pending').length
   const anyUploading = files.some(f => f.status === 'uploading')
+  const lang = worker?.lang || 'en'
+  const t = T[lang]
+  const isRtl = lang === 'ar'
 
   function selectWorker(w) {
     setWorker(w)
@@ -189,12 +248,12 @@ export default function WorkerUI() {
     setFiles([])
   }
 
-  // Step 1: Worker selection
+  // Step 1: Worker selection (no language yet, show bilingual)
   if (!worker) {
     return (
       <div className="worker-ui">
-        <h1>House Expenses</h1>
-        <p className="subtitle">Select your name to continue</p>
+        <h1>House Expenses / مصاريف المنزل</h1>
+        <p className="subtitle">Select your name / اختر اسمك</p>
         <div className="section">
           <div className="toggle-group">
             {WORKERS.map(w => (
@@ -209,9 +268,9 @@ export default function WorkerUI() {
   // Step 2: PIN entry
   if (!authenticated) {
     return (
-      <div className="worker-ui">
-        <h1>House Expenses</h1>
-        <p className="subtitle">Enter PIN for {worker.name}</p>
+      <div className="worker-ui" dir={isRtl ? 'rtl' : 'ltr'}>
+        <h1>{t.title}</h1>
+        <p className="subtitle">{t.enterPin(worker.name)}</p>
         <div className="section">
           <div className="pin-input-row">
             {[0, 1, 2, 3].map(i => (
@@ -236,8 +295,8 @@ export default function WorkerUI() {
               )
             ))}
           </div>
-          {pinError && <div className="msg error">Wrong PIN. Try again.</div>}
-          <button className="clear-all-btn" onClick={() => setWorker(null)}>Back</button>
+          {pinError && <div className="msg error">{t.wrongPin}</div>}
+          <button className="clear-all-btn" onClick={() => setWorker(null)}>{t.back}</button>
         </div>
       </div>
     )
@@ -245,28 +304,28 @@ export default function WorkerUI() {
 
   // Step 3: Authenticated — upload receipts
   return (
-    <div className="worker-ui">
+    <div className="worker-ui" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="worker-header">
-        <h1>House Expenses</h1>
-        <button className="logout-btn" onClick={logout}>Switch user</button>
+        <h1>{t.title}</h1>
+        <button className="logout-btn" onClick={logout}>{t.switchUser}</button>
       </div>
-      <p className="subtitle">Logged in as {worker.name}</p>
+      <p className="subtitle">{t.loggedInAs(worker.name)}</p>
 
-      {!navigator.onLine && <div className="msg offline">You're offline — receipts will be queued and synced automatically</div>}
+      {!navigator.onLine && <div className="msg offline">{t.offline}</div>}
 
       {queueCount > 0 && (
         <div className="msg queued-banner">
-          {queueCount} receipt{queueCount > 1 ? 's' : ''} saved offline
+          {t.savedOffline(queueCount)}
           {navigator.onLine && (
             <button className="sync-btn" onClick={syncQueue} disabled={syncing}>
-              {syncing ? 'Syncing...' : 'Sync now'}
+              {syncing ? t.syncing : t.syncNow}
             </button>
           )}
         </div>
       )}
 
       <div className="section">
-        <label>Authorized by</label>
+        <label>{t.authorizedBy}</label>
         <div className="toggle-group">
           {AUTHORIZERS.map(a => (
             <button key={a} className={`toggle-btn ${authorizer === a ? 'active' : ''}`} onClick={() => setAuthorizer(a)}>{a}</button>
@@ -275,7 +334,7 @@ export default function WorkerUI() {
       </div>
 
       <div className="section">
-        <label>Receipts {files.length > 0 && `(${files.length})`}</label>
+        <label>{t.receipts} {files.length > 0 && `(${files.length})`}</label>
         <div
           ref={dropRef}
           className="drop-zone"
@@ -286,8 +345,8 @@ export default function WorkerUI() {
         >
           <div className="drop-text">
             <span className="drop-icon">📷</span>
-            <span>Tap to take photos or browse</span>
-            <span className="drop-hint">Select multiple — or drag & drop</span>
+            <span>{t.tapToPhoto}</span>
+            <span className="drop-hint">{t.dragDrop}</span>
           </div>
           <input
             ref={fileRef}
@@ -307,15 +366,15 @@ export default function WorkerUI() {
             <div key={f.id} className={`file-card ${f.status}`}>
               <img src={f.preview} alt="Receipt" className="file-thumb" />
               <div className="file-info">
-                {f.status === 'pending' && <span className="file-status pending-dot">Ready</span>}
-                {f.status === 'uploading' && <span className="file-status"><span className="mini-spinner" /> Scanning...</span>}
+                {f.status === 'pending' && <span className="file-status pending-dot">{t.ready}</span>}
+                {f.status === 'uploading' && <span className="file-status"><span className="mini-spinner" /> {t.scanning}</span>}
                 {f.status === 'done' && (
                   <span className="file-status done-text">
                     {f.result.store} — SAR {Number(f.result.total).toFixed(2)}
                   </span>
                 )}
                 {f.status === 'error' && <span className="file-status error-text">{f.error}</span>}
-                {f.status === 'queued' && <span className="file-status queued-text">Queued offline</span>}
+                {f.status === 'queued' && <span className="file-status queued-text">{t.queuedOffline}</span>}
               </div>
               {(f.status === 'pending' || f.status === 'error') && (
                 <button className="file-remove" onClick={(e) => { e.stopPropagation(); removeFile(f.id) }}>✕</button>
@@ -330,11 +389,11 @@ export default function WorkerUI() {
         onClick={handleSubmitAll}
         disabled={anyUploading || pendingCount === 0 || !authorizer}
       >
-        {anyUploading ? 'Scanning receipts...' : `Submit ${pendingCount} receipt${pendingCount !== 1 ? 's' : ''}`}
+        {anyUploading ? t.scanningReceipts : t.submit(pendingCount)}
       </button>
 
       {files.length > 0 && files.every(f => f.status === 'done') && (
-        <button className="clear-all-btn" onClick={() => setFiles([])}>Clear all & start fresh</button>
+        <button className="clear-all-btn" onClick={() => setFiles([])}>{t.clearAll}</button>
       )}
     </div>
   )
