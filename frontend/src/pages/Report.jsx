@@ -184,6 +184,15 @@ export default function Report() {
     window.print()
   }
 
+  async function refreshData() {
+    try {
+      const res = await fetch(`${API_URL}/api/receipts`, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) setReceipts(await res.json())
+      const gRes = await fetch(`${API_URL}/api/groceries/items`, { headers: { Authorization: `Bearer ${token}` } })
+      if (gRes.ok) { const gData = await gRes.json(); setGroceryInventory(gData.inventory || []) }
+    } catch {}
+  }
+
   function toggleExpand(id) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
   }
@@ -396,7 +405,8 @@ export default function Report() {
             </div>
             <div className="receipt-list">
               {wReceipts.map(r => (
-                <ReceiptCard key={r.id} r={r} spike={spikes[r.id]} expanded={expanded[r.id]} onToggle={() => toggleExpand(r.id)} />
+                <ReceiptCard key={r.id} r={r} spike={spikes[r.id]} expanded={expanded[r.id]}
+                  onToggle={() => toggleExpand(r.id)} token={token} onRefresh={refreshData} />
               ))}
               {wReceipts.length === 0 && <div className="empty">No receipts match filters</div>}
             </div>
@@ -440,7 +450,70 @@ export default function Report() {
   )
 }
 
-function ReceiptCard({ r, spike, expanded, onToggle }) {
+const CATEGORIES = ['Groceries', 'Hardware', 'Cleaning', 'Tools', 'Fuel', 'Maintenance', 'Food & Dining', 'Other']
+
+function ReceiptCard({ r, spike, expanded, onToggle, token, onRefresh }) {
+  const [editing, setEditing] = useState(false)
+  const [editData, setEditData] = useState({})
+  const [actionLoading, setActionLoading] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  function startEdit() {
+    setEditData({ store: r.store || '', date: r.date || '', total: r.total || '', category: r.category || '', notes: r.notes || '' })
+    setEditing(true)
+  }
+
+  async function saveEdit() {
+    setActionLoading('edit')
+    try {
+      const res = await fetch(`${API_URL}/api/receipts/${r.id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...editData, total: Number(editData.total) }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      setEditing(false)
+      await onRefresh()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  async function handleRescan() {
+    setActionLoading('rescan')
+    try {
+      const res = await fetch(`${API_URL}/api/receipts/${r.id}/rescan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Rescan failed')
+      await onRefresh()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  async function handleDelete() {
+    setActionLoading('delete')
+    try {
+      const res = await fetch(`${API_URL}/api/receipts/${r.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Delete failed')
+      await onRefresh()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setActionLoading('')
+      setConfirmDelete(false)
+    }
+  }
+
   return (
     <div className={`receipt-card ${spike ? 'spiked' : ''}`}>
       <div className="receipt-header" onClick={onToggle}>
@@ -465,26 +538,81 @@ function ReceiptCard({ r, spike, expanded, onToggle }) {
       </div>
       {expanded && (
         <div className="receipt-detail">
-          <div className="detail-meta">Authorized by: {r.authorizer}</div>
-          {r.notes && <div className="detail-notes">Notes: {r.notes}</div>}
-          {r.category === 'Groceries' && Array.isArray(r.items) && r.items.length > 0 && typeof r.items[0] === 'object' ? (
-            <table className="items-table">
-              <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Total</th></tr></thead>
-              <tbody>
-                {r.items.map((item, i) => (
-                  <tr key={i}>
-                    <td>{item.name}</td><td>{item.quantity}</td><td>{item.unit}</td>
-                    <td>SAR {Number(item.unit_price).toFixed(2)}</td><td>SAR {Number(item.line_total).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : Array.isArray(r.items) ? (
-            <ul className="items-list">
-              {r.items.map((item, i) => <li key={i}>{typeof item === 'string' ? item : item.name || JSON.stringify(item)}</li>)}
-            </ul>
-          ) : null}
-          {r.image_url && <img src={r.image_url} alt="Receipt" className="receipt-img" />}
+          {/* Action buttons */}
+          <div className="receipt-actions">
+            <button className="action-btn rescan" onClick={handleRescan} disabled={!!actionLoading}>
+              {actionLoading === 'rescan' ? 'Rescanning...' : 'Re-scan'}
+            </button>
+            <button className="action-btn edit" onClick={startEdit} disabled={!!actionLoading}>Edit</button>
+            {!confirmDelete ? (
+              <button className="action-btn delete" onClick={() => setConfirmDelete(true)} disabled={!!actionLoading}>Delete</button>
+            ) : (
+              <span className="confirm-delete">
+                Sure?
+                <button className="action-btn delete" onClick={handleDelete} disabled={!!actionLoading}>
+                  {actionLoading === 'delete' ? 'Deleting...' : 'Yes, delete'}
+                </button>
+                <button className="action-btn" onClick={() => setConfirmDelete(false)}>Cancel</button>
+              </span>
+            )}
+          </div>
+
+          {/* Edit form */}
+          {editing ? (
+            <div className="edit-form">
+              <div className="edit-row">
+                <label>Store</label>
+                <input value={editData.store} onChange={e => setEditData(d => ({ ...d, store: e.target.value }))} />
+              </div>
+              <div className="edit-row">
+                <label>Date</label>
+                <input type="date" value={editData.date} onChange={e => setEditData(d => ({ ...d, date: e.target.value }))} />
+              </div>
+              <div className="edit-row">
+                <label>Total (SAR)</label>
+                <input type="number" step="0.01" value={editData.total} onChange={e => setEditData(d => ({ ...d, total: e.target.value }))} />
+              </div>
+              <div className="edit-row">
+                <label>Category</label>
+                <select value={editData.category} onChange={e => setEditData(d => ({ ...d, category: e.target.value }))}>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="edit-row">
+                <label>Notes</label>
+                <input value={editData.notes} onChange={e => setEditData(d => ({ ...d, notes: e.target.value }))} />
+              </div>
+              <div className="edit-buttons">
+                <button className="action-btn save" onClick={saveEdit} disabled={actionLoading === 'edit'}>
+                  {actionLoading === 'edit' ? 'Saving...' : 'Save'}
+                </button>
+                <button className="action-btn" onClick={() => setEditing(false)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="detail-meta">Authorized by: {r.authorizer}</div>
+              {r.notes && <div className="detail-notes">Notes: {r.notes}</div>}
+              {r.category === 'Groceries' && Array.isArray(r.items) && r.items.length > 0 && typeof r.items[0] === 'object' ? (
+                <table className="items-table">
+                  <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Total</th></tr></thead>
+                  <tbody>
+                    {r.items.map((item, i) => (
+                      <tr key={i}>
+                        <td>{item.name}</td><td>{item.quantity}</td><td>{item.unit}</td>
+                        <td>SAR {Number(item.unit_price).toFixed(2)}</td><td>SAR {Number(item.line_total).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : Array.isArray(r.items) ? (
+                <ul className="items-list">
+                  {r.items.map((item, i) => <li key={i}>{typeof item === 'string' ? item : item.name || JSON.stringify(item)}</li>)}
+                </ul>
+              ) : null}
+              {r.image_url && <img src={r.image_url} alt="Receipt" className="receipt-img" />}
+            </>
+          )}
         </div>
       )}
     </div>

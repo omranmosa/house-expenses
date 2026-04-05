@@ -205,6 +205,134 @@ app.get('/api/groceries/items', requireManager, async (req, res) => {
   }
 });
 
+// POST /api/receipts/:id/rescan — re-process receipt image with Claude
+app.post('/api/receipts/:id/rescan', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: receipt, error: fetchErr } = await supabase.from('receipts').select('*').eq('id', id).single();
+    if (fetchErr || !receipt) return res.status(404).json({ error: 'Receipt not found' });
+
+    // Download image from Supabase Storage
+    const imageUrl = receipt.image_url;
+    const fileName = imageUrl.split('/').pop();
+    const { data: fileData, error: dlErr } = await supabase.storage.from('receipts').download(fileName);
+    if (dlErr) throw dlErr;
+
+    const buffer = Buffer.from(await fileData.arrayBuffer());
+    const mimeType = fileData.type || 'image/jpeg';
+
+    // Re-parse with Claude
+    const parsed = await parseReceipt(buffer, mimeType);
+
+    // Update receipt
+    const { data: updated, error: updateErr } = await supabase
+      .from('receipts')
+      .update({
+        store: parsed.store,
+        date: parsed.date,
+        total: parsed.total,
+        category: parsed.category,
+        items: parsed.items,
+        notes: parsed.notes,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateErr) throw updateErr;
+
+    // Update grocery items if applicable
+    await supabase.from('grocery_items').delete().eq('receipt_id', id);
+    if (parsed.category === 'Groceries' && Array.isArray(parsed.items)) {
+      const groceryItems = parsed.items
+        .filter(item => typeof item === 'object' && item.name)
+        .map(item => ({
+          receipt_id: id,
+          name: item.name,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'pcs',
+          unit_price: item.unit_price || 0,
+          line_total: item.line_total || 0,
+          purchased_at: parsed.date,
+        }));
+      if (groceryItems.length > 0) {
+        await supabase.from('grocery_items').insert(groceryItems);
+      }
+    }
+
+    res.json({ success: true, receipt: updated });
+  } catch (err) {
+    console.error('Error rescanning receipt:', err);
+    res.status(500).json({ error: err.message || 'Failed to rescan receipt' });
+  }
+});
+
+// PATCH /api/receipts/:id — edit receipt fields (manager only)
+app.patch('/api/receipts/:id', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['store', 'date', 'total', 'category', 'items', 'notes', 'worker', 'authorizer'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+    const { data, error } = await supabase.from('receipts').update(updates).eq('id', id).select().single();
+    if (error) throw error;
+
+    // If category or items changed and it's grocery, rebuild grocery_items
+    if (updates.category || updates.items) {
+      await supabase.from('grocery_items').delete().eq('receipt_id', id);
+      if (data.category === 'Groceries' && Array.isArray(data.items)) {
+        const groceryItems = data.items
+          .filter(item => typeof item === 'object' && item.name)
+          .map(item => ({
+            receipt_id: id,
+            name: item.name,
+            quantity: item.quantity || 1,
+            unit: item.unit || 'pcs',
+            unit_price: item.unit_price || 0,
+            line_total: item.line_total || 0,
+            purchased_at: data.date,
+          }));
+        if (groceryItems.length > 0) {
+          await supabase.from('grocery_items').insert(groceryItems);
+        }
+      }
+    }
+
+    res.json({ success: true, receipt: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/receipts/:id — delete receipt (manager only)
+app.delete('/api/receipts/:id', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Get receipt to find image
+    const { data: receipt } = await supabase.from('receipts').select('image_url').eq('id', id).single();
+
+    // Delete grocery items (cascade should handle this, but be explicit)
+    await supabase.from('grocery_items').delete().eq('receipt_id', id);
+
+    // Delete receipt
+    const { error } = await supabase.from('receipts').delete().eq('id', id);
+    if (error) throw error;
+
+    // Delete image from storage
+    if (receipt?.image_url) {
+      const fileName = receipt.image_url.split('/').pop();
+      await supabase.storage.from('receipts').remove([fileName]);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 
