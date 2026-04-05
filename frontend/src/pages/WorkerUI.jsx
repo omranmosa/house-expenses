@@ -2,7 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
-const WORKERS = ['تحسين', 'Biswajit']
+const WORKERS = [
+  { name: 'تحسين', pin: '1689' },
+  { name: 'Biswajit', pin: '1590' },
+]
 const AUTHORIZERS = ['Omran عمران', 'Juju الجوهره']
 const DB_NAME = 'receipts-offline'
 const STORE_NAME = 'queue'
@@ -48,7 +51,10 @@ async function removeFromQueue(id) {
 }
 
 export default function WorkerUI() {
-  const [worker, setWorker] = useState('')
+  const [worker, setWorker] = useState(null) // { name, pin }
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState(false)
+  const [authenticated, setAuthenticated] = useState(false)
   const [authorizer, setAuthorizer] = useState('')
   const [files, setFiles] = useState([]) // { id, file, preview, status: 'pending'|'uploading'|'done'|'error', result, error }
   const [queueCount, setQueueCount] = useState(0)
@@ -117,7 +123,7 @@ export default function WorkerUI() {
 
     const formData = new FormData()
     formData.append('image', fileEntry.file)
-    formData.append('worker', worker)
+    formData.append('worker', worker.name)
     formData.append('authorizer', authorizer)
 
     try {
@@ -134,7 +140,7 @@ export default function WorkerUI() {
             imageData: buf,
             mimeType: fileEntry.file.type,
             fileName: fileEntry.file.name,
-            worker,
+            worker: worker.name,
             authorizer,
           })
           await checkQueue()
@@ -159,10 +165,92 @@ export default function WorkerUI() {
   const pendingCount = files.filter(f => f.status === 'pending').length
   const anyUploading = files.some(f => f.status === 'uploading')
 
+  function selectWorker(w) {
+    setWorker(w)
+    setPinInput('')
+    setPinError(false)
+    setAuthenticated(false)
+  }
+
+  function verifyPin() {
+    if (pinInput === worker.pin) {
+      setAuthenticated(true)
+      setPinError(false)
+    } else {
+      setPinError(true)
+    }
+  }
+
+  function logout() {
+    setWorker(null)
+    setAuthenticated(false)
+    setPinInput('')
+    setAuthorizer('')
+    setFiles([])
+  }
+
+  // Step 1: Worker selection
+  if (!worker) {
+    return (
+      <div className="worker-ui">
+        <h1>House Expenses</h1>
+        <p className="subtitle">Select your name to continue</p>
+        <div className="section">
+          <div className="toggle-group">
+            {WORKERS.map(w => (
+              <button key={w.name} className="toggle-btn worker-select" onClick={() => selectWorker(w)}>{w.name}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Step 2: PIN entry
+  if (!authenticated) {
+    return (
+      <div className="worker-ui">
+        <h1>House Expenses</h1>
+        <p className="subtitle">Enter PIN for {worker.name}</p>
+        <div className="section">
+          <div className="pin-input-row">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`pin-dot ${pinInput.length > i ? 'filled' : ''}`} />
+            ))}
+          </div>
+          <div className="pin-pad">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, 'del'].map((key, i) => (
+              key === null ? <div key={i} className="pin-key empty" /> :
+              key === 'del' ? (
+                <button key={i} className="pin-key del" onClick={() => setPinInput(p => p.slice(0, -1))}>&#9003;</button>
+              ) : (
+                <button key={i} className="pin-key" onClick={() => {
+                  const next = pinInput + key
+                  setPinInput(next)
+                  setPinError(false)
+                  if (next.length === 4) {
+                    if (next === worker.pin) { setAuthenticated(true); setPinError(false) }
+                    else { setPinError(true); setPinInput('') }
+                  }
+                }}>{key}</button>
+              )
+            ))}
+          </div>
+          {pinError && <div className="msg error">Wrong PIN. Try again.</div>}
+          <button className="clear-all-btn" onClick={() => setWorker(null)}>Back</button>
+        </div>
+      </div>
+    )
+  }
+
+  // Step 3: Authenticated — upload receipts
   return (
     <div className="worker-ui">
-      <h1>House Expenses</h1>
-      <p className="subtitle">Upload receipts to track expenses</p>
+      <div className="worker-header">
+        <h1>House Expenses</h1>
+        <button className="logout-btn" onClick={logout}>Switch user</button>
+      </div>
+      <p className="subtitle">Logged in as {worker.name}</p>
 
       {!navigator.onLine && <div className="msg offline">You're offline — receipts will be queued and synced automatically</div>}
 
@@ -176,15 +264,6 @@ export default function WorkerUI() {
           )}
         </div>
       )}
-
-      <div className="section">
-        <label>Worker</label>
-        <div className="toggle-group">
-          {WORKERS.map(w => (
-            <button key={w} className={`toggle-btn ${worker === w ? 'active' : ''}`} onClick={() => setWorker(w)}>{w}</button>
-          ))}
-        </div>
-      </div>
 
       <div className="section">
         <label>Authorized by</label>
@@ -222,7 +301,6 @@ export default function WorkerUI() {
         </div>
       </div>
 
-      {/* File previews */}
       {files.length > 0 && (
         <div className="file-grid">
           {files.map(f => (
@@ -250,7 +328,7 @@ export default function WorkerUI() {
       <button
         className="submit-btn"
         onClick={handleSubmitAll}
-        disabled={anyUploading || pendingCount === 0 || !worker || !authorizer}
+        disabled={anyUploading || pendingCount === 0 || !authorizer}
       >
         {anyUploading ? 'Scanning receipts...' : `Submit ${pendingCount} receipt${pendingCount !== 1 ? 's' : ''}`}
       </button>
