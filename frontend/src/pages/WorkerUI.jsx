@@ -224,6 +224,17 @@ export default function WorkerUI() {
   const t = T[lang]
   const isRtl = lang === 'ar'
 
+  // Force direction on <html> to override system Arabic settings
+  useEffect(() => {
+    if (authenticated && worker) {
+      document.documentElement.dir = isRtl ? 'rtl' : 'ltr'
+      document.documentElement.lang = isRtl ? 'ar' : 'en'
+    } else {
+      document.documentElement.dir = 'ltr'
+      document.documentElement.lang = 'en'
+    }
+  }, [authenticated, worker, isRtl])
+
   function selectWorker(w) {
     setWorker(w)
     setPinInput('')
@@ -248,10 +259,10 @@ export default function WorkerUI() {
     setFiles([])
   }
 
-  // Step 1: Worker selection (no language yet, show bilingual)
+  // Step 1: Worker selection (no language yet, show bilingual, force LTR to avoid system Arabic issues)
   if (!worker) {
     return (
-      <div className="worker-ui">
+      <div className="worker-ui" dir="ltr">
         <h1>House Expenses / مصاريف المنزل</h1>
         <p className="subtitle">Select your name / اختر اسمك</p>
         <div className="section">
@@ -369,7 +380,7 @@ export default function WorkerUI() {
                 {f.status === 'pending' && <span className="file-status pending-dot">{t.ready}</span>}
                 {f.status === 'uploading' && <span className="file-status"><span className="mini-spinner" /> {t.scanning}</span>}
                 {f.status === 'done' && (
-                  <span className="file-status done-text">
+                  <span className="file-status done-text" dir="ltr">
                     {f.result.store} — SAR {Number(f.result.total).toFixed(2)}
                   </span>
                 )}
