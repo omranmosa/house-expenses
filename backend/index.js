@@ -6,10 +6,18 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 app.use(cors());
 app.use(express.json());
+
+// Handle multer errors (file too large, etc.)
+app.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'File too large. Maximum size is 50MB.' });
+  }
+  next(err);
+});
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic();
